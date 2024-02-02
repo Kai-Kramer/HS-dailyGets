@@ -1,0 +1,126 @@
+<?php
+require_once __DIR__ . '\vendor\autoload.php';
+
+$dotenv = Dotenv\Dotenv::createImmutable(__DIR__);
+$dotenv->load();
+
+use HubSpot\Factory;
+use HubSpot\Client\Crm\Deals\ApiException;
+use HubSpot\Client\Crm\Deals\Model\Filter;
+use HubSpot\Client\Crm\Deals\Model\FilterGroup;
+use HubSpot\Client\Crm\Deals\Model\PublicObjectSearchRequest;
+
+$client = Factory::createWithAccessToken($_ENV['HS_KEY']);
+
+// default construction has params datetime = 'now' and timezone = null ?
+$now = new DateTimeImmutable(datetime: 'now');
+
+$filter1 = new Filter([
+    'property_name' => 'hs_lastmodifieddate',
+    'operator' => 'GT',
+    'value' => $now->sub(DateInterval::createFromDateString('30 days'))->getTimestamp(),
+]);
+
+$filterGroup1 = new FilterGroup([
+    'filters' => [$filter1]
+]);
+$limit = 100;
+
+$sorts = [
+    [
+        'propertyName' => 'hs_lastmodifieddate',
+        'direction' => 'ASCENDING'
+    ],
+];
+
+
+$properties = [
+    "hs_object_id",
+    "createdate",
+    "dealname",
+    "dealstage",
+    "hs_is_closed_won",
+    "hs_is_closed",
+    "hs_lastmodifieddate",
+    "hs_analytics_latest_source",
+    "hs_analytics_latest_source_timestamp",
+    "hs_analytics_source",
+    "hs_analytics_source_data_1",
+    "hs_analytics_source_data_2",
+    "dealtype",
+    "dealname",
+    "closedate",
+    "num_nomes",
+    "days_to_close",
+    "notes_last_updated",
+    "notes_last_contacted"
+];
+
+
+$search = new PublicObjectSearchRequest();
+$search->setFilterGroups([$filterGroup1]);
+$search->setSorts($sorts);
+$search->setLimit($limit);
+$search->setProperties($properties);
+
+$apiResponse = null; $results = [];
+do {
+    
+    try {
+
+        // call and append to results
+        $apiResponse = $client->crm()->deals()->searchApi()->doSearch($search);
+        foreach($apiResponse["results"] as $item) {
+            $results[] = $item->getProperties();
+        }
+
+        if ($apiResponse["paging"] !== null) {
+            $search->setAfter((int)$apiResponse["paging"]["next"]["after"]);
+        }
+        
+        // rate limit is 4 requests per second
+        // 250 000 microseconds = 0.25 seconds
+        usleep(250000);
+
+    } catch (ApiException $e) {
+        echo "Exception when calling search_api->do_search: ", $e->getResponseObject();
+        print_rt($results);
+    }
+
+} while ($apiResponse["paging"] !== null);
+
+// it ain't pretty but it works
+$first = array_shift($results);
+$outputString = to_csv_headers($first);
+$outputString .= to_csv_row($first);
+
+foreach($results as $line) {
+    $outputString .= to_csv_row($line);
+}
+
+echo($outputString);
+
+
+
+
+
+// logically identical to @to_csv_row except array_keys is used instead of values
+function to_csv_headers(array $arr) {
+    return substr(array_reduce(array_keys($arr), fn($prev, $curr) => $prev . $curr . ",", ""), 0, -1)."\r\n";
+}
+
+function to_csv_row(array $arr) {
+    $values = array_values($arr);
+    $csvString = array_reduce($values, fn($prev, $curr) => $prev . $curr . ",", "");
+    return substr($csvString, 0, -1)."\r\n";
+}
+
+function print_rt($obj, $spaces="  ", $return=false) {
+    /* © 2022 Peter Kionga-Kamau. Free for unrestricted use.
+       Notes: - Not concerned about performance here since print_r is a debugging tool 
+              - Single preg_replace() will substitute spaces in contents, hence the loop.
+    */ 
+    $out = explode("\n",print_r($obj,1));
+    foreach ($out as $k=>$v) $out[$k] = preg_replace("/(( ){4})/", $spaces, substr($v,0,strlen($v)-strlen(ltrim($v)))).ltrim($v);
+    if($return) return implode("\n",$out); echo implode("\n",$out);
+}
