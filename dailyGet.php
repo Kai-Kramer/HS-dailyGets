@@ -5,7 +5,7 @@ $dotenv = Dotenv\Dotenv::createImmutable(__DIR__);
 $dotenv->load();
 
 use phpseclib3\Net\SFTP;
-/*
+
 use HubSpot\Factory;
 use HubSpot\Client\Crm\Deals\ApiException;
 use HubSpot\Client\Crm\Deals\Model\Filter;
@@ -99,18 +99,19 @@ $outputString .= to_csv_row($first);
 foreach($results as $line) {
     $outputString .= to_csv_row($line);
 }
-*/
+/*
 $attemptsLeft=10;
 $sftp;
 do {
-    --$attemptsLeft;
+    --$attemptsLeft;*/
     try {
         $sftp = establish_ftp();
     } catch (Exception $e) {
         echo $e->getResponseObject();
     }
-} while (attemptsLeft != 0 && !$sftp);
+//} while (attemptsLeft != 0 && !$sftp);
 
+$sftp->put("Insurely-Deal-Date-{$now->format('d-M-Y')}.csv", $outputString);
 
 // closes out the connection
 $sftp->reset();
