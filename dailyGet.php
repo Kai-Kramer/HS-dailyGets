@@ -4,6 +4,8 @@ require_once __DIR__ . '\vendor\autoload.php';
 $dotenv = Dotenv\Dotenv::createImmutable(__DIR__);
 $dotenv->load();
 
+use phpseclib3\Net\SFTP;
+/*
 use HubSpot\Factory;
 use HubSpot\Client\Crm\Deals\ApiException;
 use HubSpot\Client\Crm\Deals\Model\Filter;
@@ -97,14 +99,39 @@ $outputString .= to_csv_row($first);
 foreach($results as $line) {
     $outputString .= to_csv_row($line);
 }
+*/
+$attemptsLeft=10;
+$sftp;
+do {
+    --$attemptsLeft;
+    try {
+        $sftp = establish_ftp();
+    } catch (Exception $e) {
+        echo $e->getResponseObject();
+    }
+} while (attemptsLeft != 0 && !$sftp);
 
-echo($outputString);
 
+// closes out the connection
+$sftp->reset();
+// EOF
 
-
-
+// $_ENV vars are described in .env.example
+function establish_ftp() {
+   $sftp = new SFTP($_ENV['FTP_HOST'], $_ENV['FTP_PORT']);
+   $sftp->login($_ENV['FTP_USER'], $_ENV['FTP_PASS']);
+   if (!$sftp) {
+    throw Exception($sftp->getErrors());
+   }
+   return $sftp;
+}
 
 // logically identical to @to_csv_row except array_keys is used instead of values
+// steps: 
+//  1. rip keys from an array entry
+//  2. reduce to comma-delimited string
+//  3. delete the trailing comma
+//  4. add a (windows-friendly) newline
 function to_csv_headers(array $arr) {
     return substr(array_reduce(array_keys($arr), fn($prev, $curr) => $prev . $curr . ",", ""), 0, -1)."\r\n";
 }
@@ -115,6 +142,7 @@ function to_csv_row(array $arr) {
     return substr($csvString, 0, -1)."\r\n";
 }
 
+// source: https://stackoverflow.com/a/72550192/13422006
 function print_rt($obj, $spaces="  ", $return=false) {
     /* © 2022 Peter Kionga-Kamau. Free for unrestricted use.
        Notes: - Not concerned about performance here since print_r is a debugging tool 
@@ -124,3 +152,4 @@ function print_rt($obj, $spaces="  ", $return=false) {
     foreach ($out as $k=>$v) $out[$k] = preg_replace("/(( ){4})/", $spaces, substr($v,0,strlen($v)-strlen(ltrim($v)))).ltrim($v);
     if($return) return implode("\n",$out); echo implode("\n",$out);
 }
+?>
