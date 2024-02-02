@@ -1,1 +1,2 @@
 # HS-dailyGets
+Uses HubSpot's PHP SDK to pull 30 days' worth of Deals data. The data is formatted into .csv and sent to an FTP server. This program is intended to be triggered daily via cron or a similar scheduler.
