@@ -1,7 +1,7 @@
 <?php
-require_once __DIR__ . '\vendor\autoload.php';
+require_once __DIR__ . '/../dailyGETs/vendor/autoload.php';
 
-$dotenv = Dotenv\Dotenv::createImmutable(__DIR__);
+$dotenv = Dotenv\Dotenv::createImmutable(__DIR__.'/../dailyGETs');
 $dotenv->load();
 
 use phpseclib3\Net\SFTP;
@@ -14,7 +14,6 @@ use HubSpot\Client\Crm\Deals\Model\PublicObjectSearchRequest;
 
 $client = Factory::createWithAccessToken($_ENV['HS_KEY']);
 
-// default construction has params datetime = 'now' and timezone = null ?
 $now = new DateTimeImmutable(datetime: 'now');
 
 $filter1 = new Filter([
@@ -26,15 +25,15 @@ $filter1 = new Filter([
 $filterGroup1 = new FilterGroup([
     'filters' => [$filter1]
 ]);
+
 $limit = 100;
 
 $sorts = [
-    [
+    [ // yes I know that this is inconsistent. It bugs me, too
         'propertyName' => 'hs_lastmodifieddate',
         'direction' => 'ASCENDING'
     ],
 ];
-
 
 $properties = [
     "hs_object_id",
@@ -58,7 +57,6 @@ $properties = [
     "notes_last_contacted"
 ];
 
-
 $search = new PublicObjectSearchRequest();
 $search->setFilterGroups([$filterGroup1]);
 $search->setSorts($sorts);
@@ -67,10 +65,8 @@ $search->setProperties($properties);
 
 $apiResponse = null; $results = [];
 do {
-    
     try {
-
-        // call and append to results
+        // call and append to results; handles pagination. 
         $apiResponse = $client->crm()->deals()->searchApi()->doSearch($search);
         foreach($apiResponse["results"] as $item) {
             $results[] = $item->getProperties();
@@ -79,7 +75,7 @@ do {
         if ($apiResponse["paging"] !== null) {
             $search->setAfter((int)$apiResponse["paging"]["next"]["after"]);
         }
-        
+
         // rate limit is 4 requests per second
         // 250 000 microseconds = 0.25 seconds
         usleep(250000);
@@ -91,37 +87,37 @@ do {
 
 } while ($apiResponse["paging"] !== null);
 
-// it ain't pretty but it works
-$first = array_shift($results);
-$outputString = to_csv_headers($first);
-$outputString .= to_csv_row($first);
-
+// build csv (in memory lmao)
+$outputString = to_csv_headers($results[0]);
 foreach($results as $line) {
     $outputString .= to_csv_row($line);
 }
-/*
+
+// push data to ftp server as csv
 $attemptsLeft=10;
 $sftp;
 do {
-    --$attemptsLeft;*/
+    --$attemptsLeft;
     try {
         $sftp = establish_ftp();
     } catch (Exception $e) {
         echo $e->getResponseObject();
     }
-//} while (attemptsLeft != 0 && !$sftp);
+} while ($attemptsLeft != 0 && !$sftp);
 
-$sftp->put("Insurely-Deal-Date-{$now->format('d-M-Y')}.csv", $outputString);
+$sftp->put("Insurely-Deal-Date-{$now->format('d-M-Y.U')}.csv", $outputString);
 
-// closes out the connection
+// close out the connection
 $sftp->reset();
-// EOF
+// EOF--is there no explicit exit point?
 
 // $_ENV vars are described in .env.example
+// releases acquired resources on failure.
 function establish_ftp() {
    $sftp = new SFTP($_ENV['FTP_HOST'], $_ENV['FTP_PORT']);
    $sftp->login($_ENV['FTP_USER'], $_ENV['FTP_PASS']);
    if (!$sftp) {
+    $sftp->reset();
     throw Exception($sftp->getErrors());
    }
    return $sftp;
